@@ -11,6 +11,7 @@ var spawn = require('child_process').spawn;
 var mod_bunyan = require('bunyan');
 var request = require('request');
 var geolib = require('geolib');
+var cors = require('cors');
 var Promise = require('bluebird');
 var SphericalMercator = require('sphericalmercator');
 
@@ -429,7 +430,8 @@ var SampleApp = function() {
             });
 
         });
-        app.post('/webtopdf', function(req, res) {
+        app.options('/webtopdf', cors());
+        app.post('/webtopdf', cors(), function(req, res) {
             var params = req.body;
             console.log('params' + JSON.stringify(params));
             if (params.url) {

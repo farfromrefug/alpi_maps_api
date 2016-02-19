@@ -27,6 +27,7 @@
     "body-parser": "^1.15.0",
     "bunyan": "^1.6.0",
     "concat-stream": "^1.5.1",
+    "cors": "^2.7.1",
     "express": "^3.4.4",
     "geolib": "^2.0.18",
     "lodash": "^4.5.0",
