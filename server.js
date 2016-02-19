@@ -152,10 +152,10 @@ function staticMap(r, callback) {
     // console.log('xRatio ' + xRatio);
     // console.log('yRatio ' + yRatio);
 
-    var deltaX = Math.floor(r.width * xRatio - r.width / 2);
-    var deltaY = Math.floor(r.height * yRatio - r.height / 2);
-    // console.log('deltaX ' + deltaX);
-    // console.log('deltaY ' + deltaY);
+    var deltaX = -Math.floor(r.width * xRatio - r.width / 2);
+    var deltaY = -Math.floor(r.height * yRatio - r.height / 2);
+    console.log('deltaX ' + deltaX);
+    console.log('deltaY ' + deltaY);
 
     var canvas = new Canvas(r.width, r.height),
         ctx = canvas.getContext('2d');
@@ -416,7 +416,11 @@ var SampleApp = function() {
                 // console.log('staticMap' + err, data);
                 if (!err) {
                     // res.send();
-                    res.send(data);
+                    res.writeHead(200, {
+                        'Content-Type': 'image/png'
+                    });
+                    res.end(data); // Send the file data to the browser.
+                    // res.send(data);
                 } else {
                     res.status(500).send(err.message);
                 }
