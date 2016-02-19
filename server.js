@@ -152,13 +152,13 @@ function staticMap(r, callback) {
     // console.log('xRatio ' + xRatio);
     // console.log('yRatio ' + yRatio);
 
-    var deltaX = Math.floor(r.width * xRatio - r.width / 2) + (r.width - xCount*256)/2 ;
-    var deltaY = Math.floor(r.height * yRatio - r.height / 2) + (r.height - yCount*256)/2;
+    var deltaX = Math.floor(r.width * xRatio - r.width / 2) + (r.width - xCount * 256) / 2;
+    var deltaY = Math.floor(r.height * yRatio - r.height / 2) + (r.height - yCount * 256) / 2;
     // console.log('deltaX ' + deltaX);
     // console.log('deltaY ' + deltaY);
 
     var canvas = new Canvas(r.width, r.height),
-    // var canvas = new Canvas(xCount*256, yCount*256),
+        // var canvas = new Canvas(xCount*256, yCount*256),
         ctx = canvas.getContext('2d');
 
     var sequence = Promise.resolve(),
@@ -181,7 +181,7 @@ function staticMap(r, callback) {
                         img.src = data;
                         // var img = tiles[x * tilesData.yCount + y].data;
                         // ctx.drawImage(img,  x * 256,  y * 256, 256, 256);
-                        ctx.drawImage(img,  deltaX + x * 256,  deltaY + y * 256, 256, 256);
+                        ctx.drawImage(img, deltaX + x * 256, deltaY + y * 256, 256, 256);
                     }
                 });
             })(x, y);
@@ -405,15 +405,15 @@ var SampleApp = function() {
         app.get('/staticmap', function(req, res) {
             var params = req.query;
             params = _.mapValues(params, function(value) {
-                try {
-                    // console.log('test', typeof value, value, JSON.parse(value));
-                    return JSON.parse(value);
-                } catch (e) {
-                    console.log(e);
-                    return value;
-                }
-            })
-            // console.log('params' + JSON.stringify(params));
+                    try {
+                        // console.log('test', typeof value, value, JSON.parse(value));
+                        return JSON.parse(value);
+                    } catch (e) {
+                        console.log(e);
+                        return value;
+                    }
+                })
+                // console.log('params' + JSON.stringify(params));
             staticMap(params, function(err, data) {
                 // console.log('staticMap' + err, data);
                 if (!err) {
@@ -447,9 +447,9 @@ var SampleApp = function() {
                 wkhtmltopdf(url, params, function(err, data) {
                     if (!err) {
                         res.writeHead(200, {
-                        'Content-Type': 'application/pdf'
-                    });
-                        res.send(data);
+                            'Content-Type': 'application/pdf'
+                        });
+                        res.end(data);
                     } else {
                         res.status(500).send(err);
                     }
