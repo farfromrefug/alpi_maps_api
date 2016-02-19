@@ -144,21 +144,21 @@ function staticMap(r, callback) {
 
     var xRatio = (centerXY[0] - xyz.minX) / xCount;
     var yRatio = (centerXY[1] - xyz.minY) / yCount;
-    console.log('xLength ' + xCount);
-    console.log('yLength ' + yCount);
-    console.log('xyz ' + JSON.stringify(xyz));
-    console.log('center ' + JSON.stringify(center));
-    console.log('centerXY ' + JSON.stringify(centerXY));
-    console.log('xRatio ' + xRatio);
-    console.log('yRatio ' + yRatio);
+    // console.log('xLength ' + xCount);
+    // console.log('yLength ' + yCount);
+    // console.log('xyz ' + JSON.stringify(xyz));
+    // console.log('center ' + JSON.stringify(center));
+    // console.log('centerXY ' + JSON.stringify(centerXY));
+    // console.log('xRatio ' + xRatio);
+    // console.log('yRatio ' + yRatio);
 
-    var deltaX = -Math.floor(r.width * xRatio - r.width / 2);
-    var deltaY = -Math.floor(r.height * yRatio - r.height / 2);
-    console.log('deltaX ' + deltaX);
-    console.log('deltaY ' + deltaY);
+    var deltaX = Math.floor(r.width * xRatio - r.width / 2) + (r.width - xCount*256)/2 ;
+    var deltaY = Math.floor(r.height * yRatio - r.height / 2) + (r.height - yCount*256)/2;
+    // console.log('deltaX ' + deltaX);
+    // console.log('deltaY ' + deltaY);
 
-    // var canvas = new Canvas(r.width, r.height),
-    var canvas = new Canvas(xCount*256, yCount*256),
+    var canvas = new Canvas(r.width, r.height),
+    // var canvas = new Canvas(xCount*256, yCount*256),
         ctx = canvas.getContext('2d');
 
     var sequence = Promise.resolve(),
@@ -180,7 +180,8 @@ function staticMap(r, callback) {
                         // console.log('drawing ' + x + ',' + y);
                         img.src = data;
                         // var img = tiles[x * tilesData.yCount + y].data;
-                        ctx.drawImage(img,  x * 256,  y * 256, 256, 256);
+                        // ctx.drawImage(img,  x * 256,  y * 256, 256, 256);
+                        ctx.drawImage(img,  deltaX + x * 256,  deltaY + y * 256, 256, 256);
                     }
                 });
             })(x, y);
