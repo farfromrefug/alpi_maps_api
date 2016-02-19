@@ -28,7 +28,7 @@ if (os.platform() == 'darwin') {
     Canvas = require('canvas');
     wkhtmltopdfcommand = './bin/osx/' + 'wkhtmltopdf'
 } else {
-    Canvas = require('canvas-heroku');
+    Canvas = require('canvas');
 }
 
 function quote(val) {
