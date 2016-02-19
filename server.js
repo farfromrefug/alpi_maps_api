@@ -294,7 +294,7 @@ function wkhtmltopdf(url, params, callback) {
     stream.on('error', handleError);
 
     var write = concat(function(data) {
-        callback(null, data);
+        callback(null, new Buffer(data));
     });
 
     child.stdout.pipe(write);
