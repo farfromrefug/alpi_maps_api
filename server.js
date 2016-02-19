@@ -6,22 +6,29 @@ var os = require('os');
 var _ = require('lodash');
 var mod_path = require('path');
 var slang = require('slang');
-var myprocess = require('process');
+var process = require('process');
 var spawn = require('child_process').spawn;
 var mod_bunyan = require('bunyan');
+var request = require('request');
+var geolib = require('geolib');
+var Promise = require('bluebird');
+var SphericalMercator = require('sphericalmercator');
+
 // var mod_spawnasync = require('spawn-async');
 var concat = require('concat-stream');
 var bodyParser = require('body-parser');
 var log = new mod_bunyan({
-    'name': mod_path.basename(myprocess.argv[1]),
-    'level': myprocess.env['LOG_LEVEL'] || 'debug'
+    'name': mod_path.basename(process.argv[1]),
+    'level': process.env['LOG_LEVEL'] || 'debug'
 });
-// var wkhtmltopdf = require('wkhtmltopdf');
-wkhtmltopdfcommand = './bin/linux/' + 'wkhtmltopdf'
+wkhtmltopdfcommand = './bin/linux/' + 'wkhtmltopdf';
+
+var Canvas;
 if (os.platform() == 'darwin') {
+    Canvas = require('canvas');
     wkhtmltopdfcommand = './bin/osx/' + 'wkhtmltopdf'
-        // } else {
-        // wkhtmltopdf.command = './bin/linux/' + 'wkhtmltopdf'
+} else {
+    Canvas = require('canvas-heroku');
 }
 
 function quote(val) {
@@ -30,6 +37,200 @@ function quote(val) {
         val = '"' + val.replace(/(["\\$`])/g, '\\$1') + '"';
 
     return val;
+}
+
+var WMS_ORIGIN_X = -20037508.34789244;
+var WMS_ORIGIN_Y = 20037508.34789244;
+var WMS_MAP_SIZE = 20037508.34789244 * 2;
+
+function getSubdomain(t, subdomains) {
+    // sdebug('getSubdomain', subdomains);
+    if (subdomains) {
+        var index = (t.x + t.y) % subdomains.length;
+        return subdomains.charAt(index);
+    } else {
+        return '';
+    }
+}
+
+function getTileUrl(r, t) {
+    var url = r.layer.url.replace('{s}', getSubdomain(t, r.layer.subdomains || 'abc'));
+    if (url.indexOf('{bbox}') >= 0) {
+        var tileSize = WMS_MAP_SIZE / Math.pow(2, t.z);
+        var minx = WMS_ORIGIN_X + t.x * tileSize;
+        var maxx = WMS_ORIGIN_X + (t.x + 1) * tileSize;
+        var miny = WMS_ORIGIN_Y - (t.y + 1) * tileSize;
+        var maxy = WMS_ORIGIN_Y - t.y * tileSize;
+        return url.replace('{bbox}', minx + ',' + miny + ',' + maxx + ',' + maxy);
+    } else {
+        return url.replace('{x}', t.x).replace('{y}', t.y).replace('{z}', t.z);
+    }
+}
+
+function getBoundsZoomLevel(bounds, imageSize) {
+    var worldDim = 256;
+    var zoomMax = 22;
+
+    function latRad(lat) {
+        var sin = Math.sin(lat * Math.PI / 180);
+        var radX2 = Math.log((1 + sin) / (1 - sin)) / 2;
+        return Math.max(Math.min(radX2, Math.PI), -Math.PI) / 2;
+    }
+
+    function zoom(mapPx, worldPx, fraction) {
+        return Math.round(Math.log(mapPx / worldPx / fraction) / Math.LN2);
+    }
+
+    var ne = bounds.ne;
+    var sw = bounds.sw;
+
+    var latFraction = (latRad(ne.latitude) - latRad(sw.latitude)) / Math.PI;
+
+    var lngDiff = ne.longitude - sw.longitude;
+    var lngFraction = ((lngDiff < 0) ? (lngDiff + 360) : lngDiff) / 360;
+
+    var latZoom = zoom(imageSize.height, worldDim, latFraction);
+    var lngZoom = zoom(imageSize.width, worldDim, lngFraction);
+
+    return Math.min(Math.min(latZoom, lngZoom), zoomMax);
+}
+
+var fetchTile = function(r, t) {
+    var url = getTileUrl(r, t);
+    // console.log('fetchTile ' + r.layer.userAgent);
+    // Return a new promise.
+    return new Promise(function(resolve, reject) {
+        function get(r, gattempts, resolve, reject) {
+            request.defaults({
+                headers: (r.layer.userAgent && {
+                    'User-Agent': r.layer.userAgent
+                }),
+                encoding: null
+            }).get(url, function(error, response, body) {
+                // console.log('fetch ' + url + ' ' + response.statusCode + ' ' + error);
+                if (!error && response.statusCode == 200) {
+                    // console.log("data fetched " + url);
+                    resolve(new Buffer(body, 'base64'));
+                } else if (response.statusCode !== 404 && response.statusCode !== 403 && gattempts < 3) {
+                    get(r, gattempts + 1, resolve, reject);
+                } else {
+                    reject(Error(error || 'can\'t fetch tile:' + url));
+                }
+            });
+        }
+        get(r, 0, resolve, reject);
+
+    });
+};
+
+function staticMap(r, callback) {
+    r.width = r.width || 500;
+    r.height = r.height || 500;
+    // List tiles
+    var bounds = r.bounds;
+    var zoom = getBoundsZoomLevel(bounds, r);
+    // var tilesData = listTiles(r, zoom); //separated in chunks
+    // var tiles = tilesData.tiles;
+    var merc = new SphericalMercator({
+        size: 256
+    });
+    var xyz = merc.xyz([bounds.sw.longitude, bounds.sw.latitude, bounds.ne.longitude, bounds.ne.latitude], zoom);
+    var xCount = xyz.maxX - xyz.minX + 1;
+    var yCount = xyz.maxY - xyz.minY + 1;
+    var center = geolib.getCenter([r.bounds.ne, r.bounds.sw]);
+    var centerXY = _.map(merc.px([parseFloat(center.longitude), parseFloat(center.latitude)], zoom), function(value) {
+        return value / 256;
+    });
+
+    var xRatio = (centerXY[0] - xyz.minX) / xCount;
+    var yRatio = (centerXY[1] - xyz.minY) / yCount;
+    // console.log('xLength ' + xCount);
+    // console.log('yLength ' + yCount);
+    // console.log('xyz ' + JSON.stringify(xyz));
+    // console.log('center ' + JSON.stringify(center));
+    // console.log('centerXY ' + JSON.stringify(centerXY));
+    // console.log('xRatio ' + xRatio);
+    // console.log('yRatio ' + yRatio);
+
+    var deltaX = Math.floor(r.width * xRatio - r.width / 2);
+    var deltaY = Math.floor(r.height * yRatio - r.height / 2);
+    // console.log('deltaX ' + deltaX);
+    // console.log('deltaY ' + deltaY);
+
+    var canvas = new Canvas(r.width, r.height),
+        ctx = canvas.getContext('2d');
+
+    var sequence = Promise.resolve(),
+        img;
+    for (var x = 0; x < xCount; x++) {
+        for (var y = 0; y < yCount; y++) {
+            (function(x, y) {
+                sequence = sequence.then(function() {
+                    // Wait for everything in the sequence so far,
+                    // then wait for this chapter to arrive.
+                    return fetchTile(r, {
+                        x: x + xyz.minX,
+                        y: y + xyz.minY,
+                        z: zoom
+                    });
+                }).then(function(data) {
+                    if (data) {
+                        img = new Canvas.Image;
+                        console.log('drawing ' + x + ',' + y);
+                        img.src = data;
+                        // var img = tiles[x * tilesData.yCount + y].data;
+                        ctx.drawImage(img, deltaX + x * 256, deltaY + y * 256, 256, 256);
+                    }
+                });
+            })(x, y);
+
+        }
+    }
+    sequence.then(function() {
+        console.log('all tiles fetched');
+
+        callback(null, canvas.toBuffer());
+    }).catch(function(e) {
+        // setTimeout(function() {
+        //     throw e;
+        // }, 0);
+        callback(new Error(e), null);
+    });
+    // _(tiles).map(_.partial(fetchTile, r)).reduce(function(sequence, fetchPromise) {
+    //     // Use reduce to chain the promises together,
+    //     // adding content to the page for each chapter
+    //     return sequence.then(function() {
+    //         // Wait for everything in the sequence so far,
+    //         // then wait for this chapter to arrive.
+    //         return fetchPromise;
+    //     }).then(function(data) {
+    //         if (data) {
+    //             data.tile.data = data.data;
+    //             // insertTile(data.r, data.tile, data.data)
+    //         }
+    //     });
+    // }, Promise.resolve()).then(function() {
+    //     console.log('all tiles fetched');
+    //     var canvas = new Canvas(tilesData.xCount * 256, tilesData.yCount * 256),
+    //         ctx = canvas.getContext('2d');
+    //     for (var x = 0; x < tilesData.xCount; x++) {
+    //         for (var y = 0; y < tilesData.yCount; y++) {
+    //             var img = new Canvas.Image;
+    //             var index = x * tilesData.yCount + y;
+    //             var tile = tiles[index];
+    //             console.log('drawing ' + index + ',' + x + ',' + y + ',' + tile.x + ',' + tile.y);
+    //             img.src = tile.data;
+    //             // var img = tiles[x * tilesData.yCount + y].data;
+    //             ctx.drawImage(img, x * 256, y * 256, 256, 256);
+    //         }
+    //     }
+    //     callback(canvas.toBuffer());
+    // }).catch(function(e) {
+    //     setTimeout(function() {
+    //         throw e;
+    //     }, 0);
+    //     callback(new Error(e));
+    // });
 }
 
 function wkhtmltopdf(url, params, callback) {
@@ -198,6 +399,21 @@ var SampleApp = function() {
             res.setHeader('Content-Type', 'text/html');
             res.send(self.cache_get('index.html'));
         });
+
+        app.post('/staticmap', function(req, res) {
+            var params = req.body;
+            // console.log('params' + JSON.stringify(params));
+            staticMap(params, function(err, data) {
+            // console.log('staticMap' + err, data);
+                if (!err) {
+                    // res.send();
+                    res.send(data);
+                } else {
+                    res.status(500).send(err.message);
+                }
+            });
+
+        });
         app.post('/webtopdf', function(req, res) {
             var params = req.body;
             console.log('params' + JSON.stringify(params));
@@ -208,9 +424,9 @@ var SampleApp = function() {
                 params['custom-header-propagation'] = true;
                 var headers = params['custom-header'] || [];
                 headers.push({
-                    name:'User-Agent', 
+                    name: 'User-Agent',
                     // value:'Mozilla/5.0 (iPad; CPU OS 7_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) CriOS/30.0.1599.12 Mobile/11A465 Safari/8536.25 (3B92C18B-D9DE-4CB7-A02A-22FD2AF17C8F)'
-                    value:req.headers['user-agent']
+                    value: req.headers['user-agent']
                 });
                 params['custom-header'] = headers;
                 wkhtmltopdf(url, params, function(err, data) {
@@ -221,7 +437,9 @@ var SampleApp = function() {
                     }
                 });
             } else {
-                res.status(500).send({ error: 'Missing url param' });
+                res.status(500).send({
+                    error: 'Missing url param'
+                });
             }
             // res.send(params);
 
