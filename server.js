@@ -6,15 +6,15 @@ var os = require('os');
 var _ = require('lodash');
 var mod_path = require('path');
 var slang = require('slang');
-var process = require('process');
+var myprocess = require('process');
 var spawn = require('child_process').spawn;
 var mod_bunyan = require('bunyan');
 // var mod_spawnasync = require('spawn-async');
 var concat = require('concat-stream');
 var bodyParser = require('body-parser');
 var log = new mod_bunyan({
-    'name': mod_path.basename(process.argv[1]),
-    'level': process.env['LOG_LEVEL'] || 'debug'
+    'name': mod_path.basename(myprocess.argv[1]),
+    'level': myprocess.env['LOG_LEVEL'] || 'debug'
 });
 // var wkhtmltopdf = require('wkhtmltopdf');
 wkhtmltopdfcommand = './bin/linux/' + 'wkhtmltopdf'
