@@ -448,10 +448,8 @@ var SampleApp = function() {
                 params['custom-header'] = headers;
                 wkhtmltopdf(url, params, function(err, data) {
                     if (!err) {
-                        res.writeHead(200, {
-                            'Content-Type': 'application/pdf'
-                        });
-                        res.end(data);
+                        res.type('application/pdf');
+                        res.send(data, 'binary');
                     } else {
                         res.status(500).send(err);
                     }
