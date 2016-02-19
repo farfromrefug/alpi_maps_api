@@ -54,7 +54,7 @@ function getSubdomain(t, subdomains) {
 }
 
 function getTileUrl(r, t) {
-    var url = r.layer.url.replace('{s}', getSubdomain(t, r.layer.subdomains || 'abc'));
+    var url = r.url.replace('{s}', getSubdomain(t, r.subdomains || 'abc'));
     if (url.indexOf('{bbox}') >= 0) {
         var tileSize = WMS_MAP_SIZE / Math.pow(2, t.z);
         var minx = WMS_ORIGIN_X + t.x * tileSize;
@@ -102,16 +102,15 @@ var fetchTile = function(r, t) {
     return new Promise(function(resolve, reject) {
         function get(r, gattempts, resolve, reject) {
             request.defaults({
-                headers: (r.layer.userAgent && {
-                    'User-Agent': r.layer.userAgent
-                }),
+                headers: r.headers,
                 encoding: null
             }).get(url, function(error, response, body) {
                 // console.log('fetch ' + url + ' ' + response.statusCode + ' ' + error);
                 if (!error && response.statusCode == 200) {
                     // console.log("data fetched " + url);
                     resolve(new Buffer(body, 'base64'));
-                } else if (response.statusCode !== 404 && response.statusCode !== 403 && gattempts < 3) {
+                } else if (response.statusCode !== 404 && response.statusCode !== 403 && gattempts <
+                    3) {
                     get(r, gattempts + 1, resolve, reject);
                 } else {
                     reject(Error(error || 'can\'t fetch tile:' + url));
@@ -127,6 +126,7 @@ function staticMap(r, callback) {
     r.width = r.width || 500;
     r.height = r.height || 500;
     // List tiles
+    // console.log('staticMap' + typeof r.bounds);
     var bounds = r.bounds;
     var zoom = getBoundsZoomLevel(bounds, r);
     // var tilesData = listTiles(r, zoom); //separated in chunks
@@ -176,7 +176,7 @@ function staticMap(r, callback) {
                 }).then(function(data) {
                     if (data) {
                         img = new Canvas.Image;
-                        console.log('drawing ' + x + ',' + y);
+                        // console.log('drawing ' + x + ',' + y);
                         img.src = data;
                         // var img = tiles[x * tilesData.yCount + y].data;
                         ctx.drawImage(img, deltaX + x * 256, deltaY + y * 256, 256, 256);
@@ -400,11 +400,20 @@ var SampleApp = function() {
             res.send(self.cache_get('index.html'));
         });
 
-        app.post('/staticmap', function(req, res) {
-            var params = req.body;
+        app.get('/staticmap', function(req, res) {
+            var params = req.query;
+            params = _.mapValues(params, function(value) {
+                try {
+                    // console.log('test', typeof value, value, JSON.parse(value));
+                    return JSON.parse(value);
+                } catch (e) {
+                    console.log(e);
+                    return value;
+                }
+            })
             // console.log('params' + JSON.stringify(params));
             staticMap(params, function(err, data) {
-            // console.log('staticMap' + err, data);
+                // console.log('staticMap' + err, data);
                 if (!err) {
                     // res.send();
                     res.send(data);
