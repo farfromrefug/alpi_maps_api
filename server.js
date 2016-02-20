@@ -13,7 +13,7 @@ var request = require('request');
 var geolib = require('geolib');
 var Promise = require('bluebird');
 var SphericalMercator = require('sphericalmercator');
-
+var bufferedSpawn = require('buffered-spawn');
 // var mod_spawnasync = require('spawn-async');
 var concat = require('concat-stream');
 var bodyParser = require('body-parser');
@@ -235,9 +235,78 @@ function staticMap(r, callback) {
     // });
 }
 
+function execute(command, args, options) {
+    var cp;
+    var promise = new Promise(function(resolve, reject) {
+        var stderr = new Buffer('');
+        var stdout = new Buffer('');
+
+        // Buffer output, reporting progress
+     console.log("call made is::", command, args.join(' '));
+       cp = spawn(command, args, options);
+
+        if (cp.stdout) {
+            cp.stdout.on('data', function(data) {
+                stdout = Buffer.concat([stdout, data]);
+            });
+        }
+        if (cp.stderr) {
+            cp.stderr.on('data', function(data) {
+                stderr = Buffer.concat([stderr, data]);
+            });
+        }
+
+        // If there is an error spawning the command, reject the promise
+        cp.on('error', reject);
+
+        // Listen to the close event instead of exit
+        // They are similar but close ensures that streams are flushed
+        cp.on('close', function(code) {
+            var fullCommand;
+            var error;
+            if (code) {
+                var err = stderr.toString();
+                if (/Exit with code 1 due to network error/.test(err)) {
+                    code = 0;
+                }
+            }
+            // stdout = stdout.toString();
+            // stderr = stderr.toString();
+
+            if (!code) {
+                return resolve({
+                    stdout: stdout,
+                    stderr: stderr
+                });
+            }
+
+            // Generate the full command to be presented in the error message
+            args = args || [];
+            fullCommand = command;
+            fullCommand += args.length ? ' ' + args.join(' ') : '';
+
+            // Build the error instance
+            var error = new Error('Failed to execute "' + fullCommand + '", exit code of #' + code);
+            error.code = 'ECMDERR';
+            _.assign(error, {
+                stderr: stderr,
+                stdout: stdout,
+                details: stderr,
+                status: code,
+            });
+
+            return reject(error);
+        });
+    });
+
+    promise.cp = cp;
+
+    return promise;
+}
+
 function wkhtmltopdf(url, params, callback) {
     callback = callback || Function.prototype
-    console.log('wkhtmltopdf',wkhtmltopdfcommand );
+        // console.log('wkhtmltopdf', wkhtmltopdfcommand);
     var args = [wkhtmltopdfcommand];
     _.each(params, function(value, key) {
         if (_.isArray(value)) {
@@ -260,7 +329,7 @@ function wkhtmltopdf(url, params, callback) {
     args.push(quote(url)); // stdin if HTML given directly
     args.push('-'); // stdin if HTML given directly
     // this nasty business prevents piping problems on linux
-    console.log("call made is::", "/bin/sh", ["-c", args.join(' ')]);
+    // console.log("call made is::", "/bin/sh", ["-c", args.join(' ')]);
     // var worker = mod_spawnasync.createWorker({
     //     'log': log
     // });
@@ -274,32 +343,54 @@ function wkhtmltopdf(url, params, callback) {
     //             res.send(stdout);
     //         }
     //     });
-    var child = spawn('/bin/sh', ['-c', args.join(' ')], {
-        stdio: ['pipe', 'pipe', 'pipe']
-    });
-    // setup error handling
-    var stream = child.stderr;
 
-    function handleError(err) {
-        if (debug) {
-            console.log('handleError()');
-            console.log(err);
-        }
+    return execute("/bin/sh", ["-c", args.join(' ')], {
+            // cwd: '~/foo'
+        })
+        .then(function(io) {
+            // console.log(io.stdout);
+            // console.log(io.stderr);
+            callback(null, io.stdout);
+        }, function(err) {
+            // Both stdout and stderr are also set on the error object
 
-        child.removeAllListeners('exit');
-        child.kill();
+            console.log('Command failed', err.message, err.status);
+            console.log(err.stderr.toString());
+            callback(new Error(err));
+        });
+    // var child = spawn('/bin/sh', ['-c', args.join(' ')], {
+    //     stdio: ['pipe', 'pipe', 'pipe']
+    // });
+    // var buffer = new Buffer();
+    // child.stdout.on('data', function(data) {
+    //     buffer
+    // });
+    // child.on('close', function(code) {
+    //     callback(null, buffer);
+    // });
+    // // setup error handling
+    // var stream = child.stderr;
 
-        callback(new Error(err));
-    }
+    // function handleError(err) {
+    //     if (debug) {
+    //         console.log('handleError()');
+    //         console.log(err);
+    //     }
 
-    stream.on('error', handleError);
+    //     child.removeAllListeners('exit');
+    //     child.kill();
 
-    var write = concat(function(data) {
-        callback(null, data);
-    });
+    //     callback(new Error(err));
+    // }
 
-    child.stdout.pipe(write);
-    return stream;
+    // stream.on('error', handleError);
+
+    // var write = concat(function(data) {
+    //     callback(null, data);
+    // });
+
+    // child.stdout.pipe(write);
+    // return stream;
 }
 /**
  *  Define the sample application.
@@ -435,14 +526,16 @@ var SampleApp = function() {
 
         });
         // app.options('/webtopdf', cors());
-        app.get('/webtopdf', function(req, res) {
-            // var params = req.body;
-            var params = prepareParams(req);
+        app.post('/webtopdf', function(req, res) {
+            var params = req.body;
+            // var params = prepareParams(req);
             console.log('params' + JSON.stringify(params));
             if (params.url) {
 
                 var url = params.url;
                 delete params.url;
+                // params['load-error-handling'] = 'ignore';
+                // params['load-media-error'] = 'ignore';
                 params['custom-header-propagation'] = true;
                 var headers = params['custom-header'] || [];
                 headers.push({
@@ -453,8 +546,8 @@ var SampleApp = function() {
                 params['custom-header'] = headers;
                 wkhtmltopdf(url, params, function(err, data) {
                     if (!err) {
-                        console.log(typeof data);
-                        console.log( data);
+                        // console.log(typeof data);
+                        // console.log(data);
                         res.writeHead(200, {
                             'Content-Type': 'application/pdf'
                         });
