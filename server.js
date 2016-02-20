@@ -13,7 +13,6 @@ var request = require('request');
 var geolib = require('geolib');
 var Promise = require('bluebird');
 var SphericalMercator = require('sphericalmercator');
-var bufferedSpawn = require('buffered-spawn');
 // var mod_spawnasync = require('spawn-async');
 var concat = require('concat-stream');
 var bodyParser = require('body-parser');
