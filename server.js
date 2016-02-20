@@ -237,7 +237,8 @@ function staticMap(r, callback) {
 
 function wkhtmltopdf(url, params, callback) {
     callback = callback || Function.prototype
-    var args = [wkhtmltopdfcommand, '--quiet'];
+    console.log('wkhtmltopdf',wkhtmltopdfcommand );
+    var args = [wkhtmltopdfcommand];
     _.each(params, function(value, key) {
         if (_.isArray(value)) {
             _.each(value, function(array_val) {
