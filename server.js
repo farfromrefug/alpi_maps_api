@@ -405,19 +405,19 @@ var SampleApp = function() {
         function prepareParams(req) {
             var params = req.query;
             return _.mapValues(params, function(value) {
-                    try {
-                        // console.log('test', typeof value, value, JSON.parse(value));
-                        return JSON.parse(value);
-                    } catch (e) {
-                        console.log(e);
-                        return value;
-                    }
-                })
+                try {
+                    // console.log('test', typeof value, value, JSON.parse(value));
+                    return JSON.parse(value);
+                } catch (e) {
+                    console.log(e);
+                    return value;
+                }
+            })
         }
 
         app.get('/staticmap', function(req, res) {
             var params = prepareParams(req);
-                // console.log('params' + JSON.stringify(params));
+            // console.log('params' + JSON.stringify(params));
             staticMap(params, function(err, data) {
                 // console.log('staticMap' + err, data);
                 if (!err) {
@@ -452,10 +452,12 @@ var SampleApp = function() {
                 params['custom-header'] = headers;
                 wkhtmltopdf(url, params, function(err, data) {
                     if (!err) {
+                        console.log(typeof data);
+                        console.log( data);
                         res.writeHead(200, {
-                        'Content-Type': 'application/pdf'
-                    });
-                    res.end(data); // Send the file data to the browser.
+                            'Content-Type': 'application/pdf'
+                        });
+                        res.end(data); // Send the file data to the browser.
                     } else {
                         res.status(500).send(err);
                     }
