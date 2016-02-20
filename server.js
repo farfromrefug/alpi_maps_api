@@ -349,7 +349,8 @@ function wkhtmltopdf(url, params, callback) {
         .then(function(io) {
             // console.log(io.stdout);
             // console.log(io.stderr);
-            callback(null, io.stdout);
+             console.log('test', io.stderr.toString());
+           callback(null, io.stdout);
         }, function(err) {
             // Both stdout and stderr are also set on the error object
 
