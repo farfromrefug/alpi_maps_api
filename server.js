@@ -306,7 +306,7 @@ function execute(command, args, options) {
 function wkhtmltopdf(url, params, callback) {
     callback = callback || Function.prototype
         // console.log('wkhtmltopdf', wkhtmltopdfcommand);
-    var args = [wkhtmltopdfcommand];
+    var args = [];
     _.each(params, function(value, key) {
         if (_.isArray(value)) {
             _.each(value, function(array_val) {
@@ -343,7 +343,7 @@ function wkhtmltopdf(url, params, callback) {
     //         }
     //     });
 
-    return execute("/bin/sh", ["-c", args.join(' ')], {
+    return execute(wkhtmltopdfcommand, args, {
             // cwd: '~/foo'
         })
         .then(function(io) {
