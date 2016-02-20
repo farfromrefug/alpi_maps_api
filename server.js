@@ -176,10 +176,7 @@ function staticMap(r, callback) {
                 }).then(function(data) {
                     if (data) {
                         img = new Canvas.Image;
-                        // console.log('drawing ' + x + ',' + y);
                         img.src = data;
-                        // var img = tiles[x * tilesData.yCount + y].data;
-                        // ctx.drawImage(img,  x * 256,  y * 256, 256, 256);
                         ctx.drawImage(img, deltaX + x * 256, deltaY + y * 256, 256, 256);
                     }
                 });
@@ -192,46 +189,9 @@ function staticMap(r, callback) {
 
         callback(null, canvas.toBuffer());
     }).catch(function(e) {
-        // setTimeout(function() {
-        //     throw e;
-        // }, 0);
         callback(new Error(e), null);
     });
-    // _(tiles).map(_.partial(fetchTile, r)).reduce(function(sequence, fetchPromise) {
-    //     // Use reduce to chain the promises together,
-    //     // adding content to the page for each chapter
-    //     return sequence.then(function() {
-    //         // Wait for everything in the sequence so far,
-    //         // then wait for this chapter to arrive.
-    //         return fetchPromise;
-    //     }).then(function(data) {
-    //         if (data) {
-    //             data.tile.data = data.data;
-    //             // insertTile(data.r, data.tile, data.data)
-    //         }
-    //     });
-    // }, Promise.resolve()).then(function() {
-    //     console.log('all tiles fetched');
-    //     var canvas = new Canvas(tilesData.xCount * 256, tilesData.yCount * 256),
-    //         ctx = canvas.getContext('2d');
-    //     for (var x = 0; x < tilesData.xCount; x++) {
-    //         for (var y = 0; y < tilesData.yCount; y++) {
-    //             var img = new Canvas.Image;
-    //             var index = x * tilesData.yCount + y;
-    //             var tile = tiles[index];
-    //             console.log('drawing ' + index + ',' + x + ',' + y + ',' + tile.x + ',' + tile.y);
-    //             img.src = tile.data;
-    //             // var img = tiles[x * tilesData.yCount + y].data;
-    //             ctx.drawImage(img, x * 256, y * 256, 256, 256);
-    //         }
-    //     }
-    //     callback(canvas.toBuffer());
-    // }).catch(function(e) {
-    //     setTimeout(function() {
-    //         throw e;
-    //     }, 0);
-    //     callback(new Error(e));
-    // });
+
 }
 
 function execute(command, args, options) {
@@ -240,9 +200,7 @@ function execute(command, args, options) {
         var stderr = new Buffer('');
         var stdout = new Buffer('');
 
-        // Buffer output, reporting progress
-     console.log("call made is::", command, args.join(' '));
-       cp = spawn(command, args, options);
+        cp = spawn(command, args, options);
 
         if (cp.stdout) {
             cp.stdout.on('data', function(data) {
@@ -265,7 +223,7 @@ function execute(command, args, options) {
             var error;
             if (code) {
                 var err = stderr.toString();
-                if (/Exit with code 1 due to network error/.test(err)) {
+                if (!/Error:/.test(err) && /Exit with code 1 due to network error/.test(err)) {
                     code = 0;
                 }
             }
@@ -305,8 +263,7 @@ function execute(command, args, options) {
 
 function wkhtmltopdf(url, params, callback) {
     callback = callback || Function.prototype
-        // console.log('wkhtmltopdf', wkhtmltopdfcommand);
-    var args = [];
+    var args = [wkhtmltopdfcommand, '--quiet'];
     _.each(params, function(value, key) {
         if (_.isArray(value)) {
             _.each(value, function(array_val) {
@@ -327,70 +284,19 @@ function wkhtmltopdf(url, params, callback) {
     });
     args.push(quote(url)); // stdin if HTML given directly
     args.push('-'); // stdin if HTML given directly
-    // this nasty business prevents piping problems on linux
-    // console.log("call made is::", "/bin/sh", ["-c", args.join(' ')]);
-    // var worker = mod_spawnasync.createWorker({
-    //     'log': log
-    // });
-    // worker.aspawn(['/bin/sh', "-c", args.join(' ')],
-    //     function(err, stdout, stderr) {
-    //         if (err) {
-    //             console.log('error: %s', err.message);
-    //             console.error(stderr);
-    //         } else {
-    //             console.log(stdout);
-    //             res.send(stdout);
-    //         }
-    //     });
 
-    return execute(wkhtmltopdfcommand, args, {
+    return execute('/bin/sh', ['-c', args.join(' ') + ' | cat'], {
             // cwd: '~/foo'
         })
         .then(function(io) {
-            // console.log(io.stdout);
-            // console.log(io.stderr);
-             console.log('test', io.stderr.toString());
-           callback(null, io.stdout);
+            callback(null, io.stdout);
         }, function(err) {
-            // Both stdout and stderr are also set on the error object
-
             console.log('Command failed', err.message, err.status);
-            console.log(err.stderr.toString());
+            if (err.stderr) {
+                console.log(err.stderr.toString());
+            }
             callback(new Error(err));
         });
-    // var child = spawn('/bin/sh', ['-c', args.join(' ')], {
-    //     stdio: ['pipe', 'pipe', 'pipe']
-    // });
-    // var buffer = new Buffer();
-    // child.stdout.on('data', function(data) {
-    //     buffer
-    // });
-    // child.on('close', function(code) {
-    //     callback(null, buffer);
-    // });
-    // // setup error handling
-    // var stream = child.stderr;
-
-    // function handleError(err) {
-    //     if (debug) {
-    //         console.log('handleError()');
-    //         console.log(err);
-    //     }
-
-    //     child.removeAllListeners('exit');
-    //     child.kill();
-
-    //     callback(new Error(err));
-    // }
-
-    // stream.on('error', handleError);
-
-    // var write = concat(function(data) {
-    //     callback(null, data);
-    // });
-
-    // child.stdout.pipe(write);
-    // return stream;
 }
 /**
  *  Define the sample application.
