@@ -11,7 +11,6 @@ var spawn = require('child_process').spawn;
 var mod_bunyan = require('bunyan');
 var request = require('request');
 var geolib = require('geolib');
-var cors = require('cors');
 var Promise = require('bluebird');
 var SphericalMercator = require('sphericalmercator');
 
@@ -403,9 +402,9 @@ var SampleApp = function() {
             res.send(self.cache_get('index.html'));
         });
 
-        app.get('/staticmap', function(req, res) {
+        function prepareParams(req) {
             var params = req.query;
-            params = _.mapValues(params, function(value) {
+            return _.mapValues(params, function(value) {
                     try {
                         // console.log('test', typeof value, value, JSON.parse(value));
                         return JSON.parse(value);
@@ -414,6 +413,10 @@ var SampleApp = function() {
                         return value;
                     }
                 })
+        }
+
+        app.get('/staticmap', function(req, res) {
+            var params = prepareParams(req);
                 // console.log('params' + JSON.stringify(params));
             staticMap(params, function(err, data) {
                 // console.log('staticMap' + err, data);
@@ -430,9 +433,10 @@ var SampleApp = function() {
             });
 
         });
-        app.options('/webtopdf', cors());
-        app.post('/webtopdf', cors(), function(req, res) {
-            var params = req.body;
+        // app.options('/webtopdf', cors());
+        app.get('/webtopdf', function(req, res) {
+            // var params = req.body;
+            var params = prepareParams(req);
             console.log('params' + JSON.stringify(params));
             if (params.url) {
 
@@ -448,8 +452,10 @@ var SampleApp = function() {
                 params['custom-header'] = headers;
                 wkhtmltopdf(url, params, function(err, data) {
                     if (!err) {
-                        res.type('application/pdf');
-                        res.send(data, 'binary');
+                        res.writeHead(200, {
+                        'Content-Type': 'application/pdf'
+                    });
+                    res.end(data); // Send the file data to the browser.
                     } else {
                         res.status(500).send(err);
                     }
