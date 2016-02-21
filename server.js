@@ -2,302 +2,7 @@
  //  OpenShift sample Node application
 var express = require('express');
 var fs = require('fs');
-var os = require('os');
-var _ = require('lodash');
-var mod_path = require('path');
-var slang = require('slang');
-var process = require('process');
-var spawn = require('child_process').spawn;
-var mod_bunyan = require('bunyan');
-var request = require('request');
-var geolib = require('geolib');
-var Promise = require('bluebird');
-var SphericalMercator = require('sphericalmercator');
-// var mod_spawnasync = require('spawn-async');
-var concat = require('concat-stream');
-var bodyParser = require('body-parser');
-var log = new mod_bunyan({
-    'name': mod_path.basename(process.argv[1]),
-    'level': process.env['LOG_LEVEL'] || 'debug'
-});
-wkhtmltopdfcommand = './bin/linux/' + 'wkhtmltopdf';
 
-var Canvas;
-if (os.platform() == 'darwin') {
-    Canvas = require('canvas');
-    wkhtmltopdfcommand = './bin/osx/' + 'wkhtmltopdf'
-} else {
-    Canvas = require('canvas');
-}
-
-function quote(val) {
-    // escape and quote the value if it is a string and this isn't windows
-    if (typeof val === 'string')
-        val = '"' + val.replace(/(["\\$`])/g, '\\$1') + '"';
-
-    return val;
-}
-
-var WMS_ORIGIN_X = -20037508.34789244;
-var WMS_ORIGIN_Y = 20037508.34789244;
-var WMS_MAP_SIZE = 20037508.34789244 * 2;
-
-function getSubdomain(t, subdomains) {
-    // sdebug('getSubdomain', subdomains);
-    if (subdomains) {
-        var index = (t.x + t.y) % subdomains.length;
-        return subdomains.charAt(index);
-    } else {
-        return '';
-    }
-}
-
-function getTileUrl(r, t) {
-    var url = r.url.replace('{s}', getSubdomain(t, r.subdomains || 'abc'));
-    if (url.indexOf('{bbox}') >= 0) {
-        var tileSize = WMS_MAP_SIZE / Math.pow(2, t.z);
-        var minx = WMS_ORIGIN_X + t.x * tileSize;
-        var maxx = WMS_ORIGIN_X + (t.x + 1) * tileSize;
-        var miny = WMS_ORIGIN_Y - (t.y + 1) * tileSize;
-        var maxy = WMS_ORIGIN_Y - t.y * tileSize;
-        return url.replace('{bbox}', minx + ',' + miny + ',' + maxx + ',' + maxy);
-    } else {
-        return url.replace('{x}', t.x).replace('{y}', t.y).replace('{z}', t.z);
-    }
-}
-
-function getBoundsZoomLevel(bounds, imageSize) {
-    var worldDim = 256;
-    var zoomMax = 22;
-
-    function latRad(lat) {
-        var sin = Math.sin(lat * Math.PI / 180);
-        var radX2 = Math.log((1 + sin) / (1 - sin)) / 2;
-        return Math.max(Math.min(radX2, Math.PI), -Math.PI) / 2;
-    }
-
-    function zoom(mapPx, worldPx, fraction) {
-        return Math.round(Math.log(mapPx / worldPx / fraction) / Math.LN2);
-    }
-
-    var ne = bounds.ne;
-    var sw = bounds.sw;
-
-    var latFraction = (latRad(ne.latitude) - latRad(sw.latitude)) / Math.PI;
-
-    var lngDiff = ne.longitude - sw.longitude;
-    var lngFraction = ((lngDiff < 0) ? (lngDiff + 360) : lngDiff) / 360;
-
-    var latZoom = zoom(imageSize.height, worldDim, latFraction);
-    var lngZoom = zoom(imageSize.width, worldDim, lngFraction);
-
-    return Math.min(Math.min(latZoom, lngZoom), zoomMax);
-}
-
-var fetchTile = function(r, t) {
-    var url = getTileUrl(r, t);
-    // console.log('fetchTile ' + r.layer.userAgent);
-    // Return a new promise.
-    return new Promise(function(resolve, reject) {
-        function get(r, gattempts, resolve, reject) {
-            request.defaults({
-                headers: r.headers,
-                encoding: null
-            }).get(url, function(error, response, body) {
-                // console.log('fetch ' + url + ' ' + response.statusCode + ' ' + error);
-                if (!error && response.statusCode == 200) {
-                    // console.log("data fetched " + url);
-                    resolve(new Buffer(body, 'base64'));
-                } else if (response.statusCode !== 404 && response.statusCode !== 403 && gattempts <
-                    3) {
-                    get(r, gattempts + 1, resolve, reject);
-                } else {
-                    reject(Error(error || 'can\'t fetch tile:' + url));
-                }
-            });
-        }
-        get(r, 0, resolve, reject);
-
-    });
-};
-
-function staticMap(r, callback) {
-    r.width = r.width || 500;
-    r.height = r.height || 500;
-    // List tiles
-    // console.log('staticMap' + typeof r.bounds);
-    var bounds = r.bounds;
-    var zoom = getBoundsZoomLevel(bounds, r);
-    // var tilesData = listTiles(r, zoom); //separated in chunks
-    // var tiles = tilesData.tiles;
-    var merc = new SphericalMercator({
-        size: 256
-    });
-    var xyz = merc.xyz([bounds.sw.longitude, bounds.sw.latitude, bounds.ne.longitude, bounds.ne.latitude], zoom);
-    var xCount = xyz.maxX - xyz.minX + 1;
-    var yCount = xyz.maxY - xyz.minY + 1;
-    var center = geolib.getCenter([r.bounds.ne, r.bounds.sw]);
-    var centerXY = _.map(merc.px([parseFloat(center.longitude), parseFloat(center.latitude)], zoom), function(value) {
-        return value / 256;
-    });
-
-    var xRatio = (centerXY[0] - xyz.minX) / xCount;
-    var yRatio = (centerXY[1] - xyz.minY) / yCount;
-    // console.log('xLength ' + xCount);
-    // console.log('yLength ' + yCount);
-    // console.log('xyz ' + JSON.stringify(xyz));
-    // console.log('center ' + JSON.stringify(center));
-    // console.log('centerXY ' + JSON.stringify(centerXY));
-    // console.log('xRatio ' + xRatio);
-    // console.log('yRatio ' + yRatio);
-
-    var deltaX = Math.floor(r.width * xRatio - r.width / 2) + (r.width - xCount * 256) / 2;
-    var deltaY = Math.floor(r.height * yRatio - r.height / 2) + (r.height - yCount * 256) / 2;
-    // console.log('deltaX ' + deltaX);
-    // console.log('deltaY ' + deltaY);
-
-    var canvas = new Canvas(r.width, r.height),
-        // var canvas = new Canvas(xCount*256, yCount*256),
-        ctx = canvas.getContext('2d');
-
-    var sequence = Promise.resolve(),
-        img;
-    for (var x = 0; x < xCount; x++) {
-        for (var y = 0; y < yCount; y++) {
-            (function(x, y) {
-                sequence = sequence.then(function() {
-                    // Wait for everything in the sequence so far,
-                    // then wait for this chapter to arrive.
-                    return fetchTile(r, {
-                        x: x + xyz.minX,
-                        y: y + xyz.minY,
-                        z: zoom
-                    });
-                }).then(function(data) {
-                    if (data) {
-                        img = new Canvas.Image;
-                        img.src = data;
-                        ctx.drawImage(img, deltaX + x * 256, deltaY + y * 256, 256, 256);
-                    }
-                });
-            })(x, y);
-
-        }
-    }
-    sequence.then(function() {
-        console.log('all tiles fetched');
-
-        callback(null, canvas.toBuffer());
-    }).catch(function(e) {
-        callback(new Error(e), null);
-    });
-
-}
-
-function execute(command, args, options) {
-    var cp;
-    var promise = new Promise(function(resolve, reject) {
-        var stderr = new Buffer('');
-        var stdout = new Buffer('');
-
-        cp = spawn(command, args, options);
-
-        if (cp.stdout) {
-            cp.stdout.on('data', function(data) {
-                stdout = Buffer.concat([stdout, data]);
-            });
-        }
-        if (cp.stderr) {
-            cp.stderr.on('data', function(data) {
-                stderr = Buffer.concat([stderr, data]);
-            });
-        }
-
-        // If there is an error spawning the command, reject the promise
-        cp.on('error', reject);
-
-        // Listen to the close event instead of exit
-        // They are similar but close ensures that streams are flushed
-        cp.on('close', function(code) {
-            var fullCommand;
-            var error;
-            if (code) {
-                var err = stderr.toString();
-                if (!/Error:/.test(err) && /Exit with code 1 due to network error/.test(err)) {
-                    code = 0;
-                }
-            }
-            // stdout = stdout.toString();
-            // stderr = stderr.toString();
-
-            if (!code) {
-                return resolve({
-                    stdout: stdout,
-                    stderr: stderr
-                });
-            }
-
-            // Generate the full command to be presented in the error message
-            args = args || [];
-            fullCommand = command;
-            fullCommand += args.length ? ' ' + args.join(' ') : '';
-
-            // Build the error instance
-            var error = new Error('Failed to execute "' + fullCommand + '", exit code of #' + code);
-            error.code = 'ECMDERR';
-            _.assign(error, {
-                stderr: stderr,
-                stdout: stdout,
-                details: stderr,
-                status: code,
-            });
-
-            return reject(error);
-        });
-    });
-
-    promise.cp = cp;
-
-    return promise;
-}
-
-function wkhtmltopdf(url, params, callback) {
-    callback = callback || Function.prototype
-    var args = [wkhtmltopdfcommand, '--quiet'];
-    _.each(params, function(value, key) {
-        if (_.isArray(value)) {
-            _.each(value, function(array_val) {
-                args.push("--" + key);
-                args.push(quote(array_val.name));
-                args.push(quote(array_val.value));
-            });
-        } else {
-            if (key !== 'toc' && key !== 'cover' && key !== 'page')
-                key = key.length === 1 ? '-' + key : '--' + slang.dasherize(key);
-
-            if (value !== false)
-                args.push(key);
-
-            if (typeof value !== 'boolean')
-                args.push(quote(value));
-        }
-    });
-    args.push(quote(url)); // stdin if HTML given directly
-    args.push('-'); // stdin if HTML given directly
-
-    return execute('/bin/sh', ['-c', args.join(' ') + ' | cat'], {
-            // cwd: '~/foo'
-        })
-        .then(function(io) {
-            callback(null, io.stdout);
-        }, function(err) {
-            console.log('Command failed', err.message, err.status);
-            if (err.stderr) {
-                console.log(err.stderr.toString());
-            }
-            callback(new Error(err));
-        });
-}
 /**
  *  Define the sample application.
  */
@@ -395,97 +100,57 @@ var SampleApp = function() {
         //     res.send("<html><body><img src='" + link + "'></body></html>");
         // });
 
-        app.get('/', function(req, res) {
-            res.setHeader('Content-Type', 'text/html');
-            res.send(self.cache_get('index.html'));
-        });
+        // app.get('/', function(req, res) {
+        //     res.setHeader('Content-Type', 'text/html');
+        //     res.send(self.cache_get('index.html'));
+        // });
+        require('./routes/staticmap')(app);
+        require('./routes/webtopdf')(app);
 
-        function prepareParams(req) {
-            var params = req.query;
-            return _.mapValues(params, function(value) {
-                try {
-                    // console.log('test', typeof value, value, JSON.parse(value));
-                    return JSON.parse(value);
-                } catch (e) {
-                    console.log(e);
-                    return value;
-                }
-            })
-        }
+        // console.log('params' + require('./routes/staticmap').process);
+        // app.get('/staticmap', require('./routes/staticmap').process);
 
-        app.get('/staticmap', function(req, res) {
-            var params = prepareParams(req);
-            // console.log('params' + JSON.stringify(params));
-            staticMap(params, function(err, data) {
-                // console.log('staticMap' + err, data);
-                if (!err) {
-                    // res.send();
-                    res.writeHead(200, {
-                        'Content-Type': 'image/png'
-                    });
-                    res.end(data); // Send the file data to the browser.
-                    // res.send(data);
-                } else {
-                    res.status(500).send(err.message);
-                }
-            });
-
-        });
-        // app.options('/webtopdf', cors());
-        app.post('/webtopdf', function(req, res) {
-            var params = req.body;
-            // var params = prepareParams(req);
-            console.log('params' + JSON.stringify(params));
-            if (params.url) {
-
-                var url = params.url;
-                delete params.url;
-                // params['load-error-handling'] = 'ignore';
-                // params['load-media-error'] = 'ignore';
-                params['custom-header-propagation'] = true;
-                var headers = params['custom-header'] || [];
-                headers.push({
-                    name: 'User-Agent',
-                    // value:'Mozilla/5.0 (iPad; CPU OS 7_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) CriOS/30.0.1599.12 Mobile/11A465 Safari/8536.25 (3B92C18B-D9DE-4CB7-A02A-22FD2AF17C8F)'
-                    value: req.headers['user-agent']
-                });
-                params['custom-header'] = headers;
-                wkhtmltopdf(url, params, function(err, data) {
-                    if (!err) {
-                        // console.log(typeof data);
-                        // console.log(data);
-                        res.writeHead(200, {
-                            'Content-Type': 'application/pdf'
-                        });
-                        res.end(data); // Send the file data to the browser.
-                    } else {
-                        res.status(500).send(err);
-                    }
-                });
-            } else {
-                res.status(500).send({
-                    error: 'Missing url param'
-                });
-            }
-            // res.send(params);
-
-        });
+        
     };
+
+    function logErrors(err, req, res, next) {
+        console.error(err.stack);
+        next(err);
+    }
+
+    function clientErrorHandler(err, req, res, next) {
+        if (req.xhr) {
+            res.status(500).send({
+                error: 'Something failed!'
+            });
+        } else {
+            next(err);
+        }
+    }
+
+    function errorHandler(err, req, res, next) {
+        res.status(500);
+        res.render('error', {
+            error: err
+        });
+    }
 
     /**
      *  Initialize the server (express) and create the routes and register
      *  the handlers.
      */
     self.initializeServer = function() {
-        self.app = express.createServer();
-        self.app.use(bodyParser.json()); // support json encoded bodies
-        self.app.use(bodyParser.urlencoded({
-            extended: true
-        })); // support encoded bodies
-        self.app.use(express.json()); // to support JSON-encoded bodies
-        self.app.use(express.urlencoded()); // to support URL-encoded bodies
+        var app = self.app = express();
 
-        self.createRoutes(self.app);
+        var methodOverride = require('method-override');
+
+        self.app.use(express.json()); // to support JSON-encoded bodies
+        self.app.use(express.urlencoded()); // to support URL-encoded bodies;
+        app.use(methodOverride());
+        app.use(logErrors);
+        app.use(clientErrorHandler);
+        app.use(errorHandler);
+        self.createRoutes(app);
     };
 
     /**
