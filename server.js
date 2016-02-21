@@ -142,7 +142,7 @@ var SampleApp = function() {
     self.initializeServer = function() {
         var app = self.app = express();
 
-        // var methodOverride = require('method-override');
+        var methodOverride = require('method-override');
 
         self.app.use(express.json()); // to support JSON-encoded bodies
         self.app.use(express.urlencoded()); // to support URL-encoded bodies;
