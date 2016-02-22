@@ -206,11 +206,11 @@ function staticMap(r, callback) {
         }
     }
     Promise.all(sequences).then(function() {
-        console.log('all tiles fetched');
+        // console.log('all tiles fetched');
 
         callback(null, canvas.toBuffer());
     }).catch(function(e) {
-        console.log(e);
+        console.log('error', e);
         callback(new Error(e), null);
     });
 }

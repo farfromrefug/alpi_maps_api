@@ -2,6 +2,7 @@
  //  OpenShift sample Node application
 var express = require('express');
 var fs = require('fs');
+GLOBAL.Promise = require('bluebird');
 
 /**
  *  Define the sample application.
