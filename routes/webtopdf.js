@@ -1,7 +1,7 @@
 var _ = require('lodash');
 var slang = require('slang');
 var spawn = require('child_process').spawn;
-var Promise = require('bluebird');
+// var Promise = require('bluebird');
 var os = require('os');
 
 wkhtmltopdfcommand = './bin/linux/' + 'wkhtmltopdf';

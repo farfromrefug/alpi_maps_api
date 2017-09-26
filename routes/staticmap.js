@@ -97,11 +97,11 @@ var fetchTile = function(r, t, callback) {
                     encoding: null
                 }).get(url, function(error, response, body) {
                     // console.log('fetch ' + url + ' ' + response.statusCode + ' ' + error);
-                    if (!error && response.statusCode == 200) {
+                    if (!error && response && response.statusCode == 200) {
                         // console.log("data fetched " + url);
                         // var result = new Buffer(body, 'base64');
                         resolve(body);
-                    } else if (response.statusCode !== 404 && response.statusCode !== 403 &&
+                    } else if (response &&response.statusCode !== 404 && response.statusCode !== 403 &&
                         gattempts <
                         3) {
                         get(r, gattempts + 1, resolve, reject);
