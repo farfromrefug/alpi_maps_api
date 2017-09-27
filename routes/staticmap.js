@@ -3,7 +3,7 @@ var geolib = require('geolib');
 var Canvas = require('canvas');
 var SphericalMercator = require('sphericalmercator');
 var _ = require('lodash');
-var Promise = require('bluebird');
+// var Promise = require('bluebird');
 
 // node cachemanager
 var cacheManager = require('cache-manager');
